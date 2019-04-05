@@ -4,7 +4,7 @@
   "parameters": {
     "productShortName": {
       "type": "string",
-      "defaultValue": "luckydraw"
+      "defaultValue": "yourProductName"
     },
     "environmentName": {
       "type": "string",
