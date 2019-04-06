@@ -2,6 +2,9 @@
   "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
+    "microsoftAppId": {
+      "type": "string"
+    },
     "productShortName": {
       "type": "string",
       "defaultValue": "yourProductName"
@@ -77,7 +80,9 @@
     "keyVaultName": "[concat(variables('resourceNamePrefix'), 'keyvault', variables('resourceNamePostfix'))]",
     "timerLogicAppName": "[concat(variables('resourceNamePrefix'), 'timer', variables('resourceNamePostfix'))]",
     "botApiName": "[concat(variables('resourceNamePrefix'), 'botapi', variables('resourceNamePostfix'))]",
-    "appInsightsName": "[concat(variables('resourceNamePrefix'), 'appinsights', variables('resourceNamePostfix'))]"
+    "appInsightsName": "[concat(variables('resourceNamePrefix'), 'appinsights', variables('resourceNamePostfix'))]",
+    "botServiceName": "[concat(variables('resourceNamePrefix'), 'bot', variables('resourceNamePostfix'))]",
+    "storageName": "[concat(toLower(parameters('productShortName')), '4', toLower(parameters('environmentName')))]"
   },
   "resources": [
     {
@@ -334,6 +339,77 @@
           "customEmails": []
         }
       }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "name": "[variables('storageName')]",
+      "apiVersion": "2018-07-01",
+      "location": "[resourceGroup().location]",
+      "tags": {
+        "displayName": "Storage"
+      },
+      "sku": {
+        "name": "Standard_LRS",
+        "tier": "Standard"
+      },
+      "kind": "StorageV2",
+      "properties": {
+        "networkAcls": {
+          "bypass": "AzureServices",
+          "virtualNetworkRules": [],
+          "ipRules": [],
+          "defaultAction": "Allow"
+        },
+        "supportsHttpsTrafficOnly": true,
+        "encryption": {
+          "services": {
+            "file": {
+              "enabled": true
+            },
+            "blob": {
+              "enabled": true
+            }
+          },
+          "keySource": "Microsoft.Storage"
+        },
+        "accessTier": "Hot"
+      }
+    },
+    {
+      "name": "[variables('botServiceName')]",
+      "type": "Microsoft.BotService/botServices",
+      "apiVersion": "2018-07-12",
+      "location": "global",
+      "tags": {
+        "displayName": "Bot Service"
+      },
+      "sku": {
+        "name": "F0"
+      },
+      "kind": "bot",
+      "properties": {
+        "displayName": "LuckyDraw Bot",
+        "endpoint": "https://www.microsoft.com",
+        "msaAppId": "[parameters('microsoftAppId')]"
+      },
+      "resources": [
+        {
+          "name": "MsTeamsChannel",
+          "type": "channels",
+          "apiVersion": "2018-07-12",
+          "location": "global",
+          "sku": {
+            "name": "F0"
+          },
+          "kind": "bot",
+          "properties": {
+            "channelName": "Microsoft Teams"
+          },
+          "dependsOn": [
+            "[resourceId('Microsoft.BotService/botServices/', variables('botServiceName'))]"
+          ]
+        }
+      ]
     }
   ]
 }
