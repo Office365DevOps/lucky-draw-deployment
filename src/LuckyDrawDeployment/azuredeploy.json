@@ -5,18 +5,16 @@
     "microsoftAppId": {
       "type": "string"
     },
+    "microsoftAppSecret": {
+      "type": "securestring"
+    },
     "productShortName": {
       "type": "string",
       "defaultValue": "yourProductName"
     },
     "environmentName": {
       "type": "string",
-      "defaultValue": "dev",
-      "allowedValues": [
-        "dev",
-        "uat",
-        "prd"
-      ]
+      "defaultValue": "dev"
     },
     "appServicePlanSku": {
       "type": "string",
@@ -84,6 +82,25 @@
     "botServiceName": "[concat(variables('resourceNamePrefix'), 'bot', variables('resourceNamePostfix'))]",
     "storageName": "[concat(toLower(parameters('productShortName')), '4', toLower(parameters('environmentName')))]"
   },
+  "functions": [
+    {
+      "namespace": "luckydraw",
+      "members": {
+        "logicAppTriggerUrl": {
+          "parameters": [
+            {
+              "name": "url",
+              "type": "string"
+            }
+          ],
+          "output": {
+            "type": "string",
+            "value": "[concat(substring(parameters('url'), 0, indexOf(parameters('url'), '?')), '/triggers/manual/paths/invoke', substring(parameters('url'), indexOf(parameters('url'), '?')))]"
+          }
+        }
+      }
+    }
+  ],
   "resources": [
     {
       "name": "[variables('timerLogicAppName')]",
@@ -173,8 +190,12 @@
         "[concat('hidden-related:', resourceGroup().id, '/providers/Microsoft.Web/serverfarms/', variables('appServicePlanName'))]": "Resource",
         "displayName": "BotApi AppService"
       },
+      "identity": {
+        "type": "SystemAssigned"
+      },
       "dependsOn": [
-        "[resourceId('Microsoft.Web/serverfarms/', variables('appServicePlanName'))]"
+        "[resourceId('Microsoft.Web/serverfarms/', variables('appServicePlanName'))]",
+        "[resourceId('Microsoft.Insights/components/', variables('appInsightsName'))]"
       ],
       "properties": {
         "name": "[variables('botApiName')]",
@@ -185,6 +206,22 @@
             {
               "name": "ASPNETCORE_ENVIRONMENT",
               "value": "[parameters('environmentName')]"
+            },
+            {
+              "name": "KeyVaultName",
+              "value": "[variables('keyVaultName')]"
+            },
+            {
+              "name": "ServicePublicBaseUrl",
+              "value": "[concat('https://', variables('botApiName'), '.azurewebsites.net/')]"
+            },
+            {
+              "name": "Bot:Id",
+              "value": "[parameters('microsoftAppId')]"
+            },
+            {
+              "name": "ApplicationInsights:InstrumentationKey",
+              "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsightsName')), '2015-05-01').InstrumentationKey]"
             }
           ]
         }
@@ -261,11 +298,7 @@
       "name": "[variables('appInsightsName')]",
       "type": "Microsoft.Insights/components",
       "location": "East US",
-      "dependsOn": [
-        "[resourceId('Microsoft.Web/sites/', variables('botApiName'))]"
-      ],
       "tags": {
-        "[concat('hidden-link:', resourceGroup().id, '/providers/Microsoft.Web/sites/', variables('botApiName'))]": "Resource",
         "displayName": "AppInsights"
       },
       "properties": {
@@ -391,22 +424,118 @@
         "displayName": "LuckyDraw Bot",
         "endpoint": "https://www.microsoft.com",
         "msaAppId": "[parameters('microsoftAppId')]"
+      }
+    },
+    {
+      "name": "[variables('keyVaultName')]",
+      "type": "Microsoft.KeyVault/vaults",
+      "apiVersion": "2018-02-14",
+      "location": "[resourceGroup().location]",
+      "tags": {
+        "displayName": "KeyVault"
+      },
+      "properties": {
+        "enabledForDeployment": true,
+        "enabledForTemplateDeployment": true,
+        "enabledForVolumeEncryption": false,
+        "tenantId": "[subscription().tenantId]",
+        "accessPolicies": [
+        ],
+        "sku": {
+          "name": "standard",
+          "family": "A"
+        }
       },
       "resources": [
         {
-          "name": "MsTeamsChannel",
-          "type": "channels",
-          "apiVersion": "2018-07-12",
-          "location": "global",
-          "sku": {
-            "name": "F0"
+          "name": "[concat(variables('keyVaultName'), '/add')]",
+          "type": "Microsoft.KeyVault/vaults/accessPolicies",
+          "apiVersion": "2016-10-01",
+          "tags": {
+            "displayName": "Access Policies"
           },
-          "kind": "bot",
           "properties": {
-            "channelName": "Microsoft Teams"
+            "accessPolicies": [
+              {
+                "tenantId": "[subscription().tenantId]",
+                "objectId": "[reference(resourceId('Microsoft.Web/sites', variables('botApiName')), '2018-02-01', 'Full').identity.principalId]",
+                "permissions": {
+                  "keys": [
+                    "get",
+                    "list",
+                    "decrypt",
+                    "encrypt",
+                    "unwrapKey",
+                    "wrapKey",
+                    "verify",
+                    "sign"
+                  ],
+                  "secrets": [
+                    "get",
+                    "list"
+                  ]
+                }
+              }
+            ]
           },
           "dependsOn": [
-            "[resourceId('Microsoft.BotService/botServices/', variables('botServiceName'))]"
+            "[concat('Microsoft.KeyVault/vaults/', variables('keyVaultName'))]"
+          ]
+        },
+        {
+          "type": "Microsoft.KeyVault/vaults/secrets",
+          "name": "[concat(variables('keyVaultName'), '/LuckyDrawBot--1--Bot--Password')]",
+          "apiVersion": "2016-10-01",
+          "tags": {
+            "displayName": "Secret: LuckyDrawBot--1--Bot--Password"
+          },
+          "properties": {
+            "value": "[parameters('microsoftAppSecret')]",
+            "contentType": "string",
+            "attributes": {
+              "enabled": true
+            }
+          },
+          "dependsOn": [
+            "[concat('Microsoft.KeyVault/vaults/', variables('keyVaultName'))]"
+          ]
+        },
+        {
+          "type": "Microsoft.KeyVault/vaults/secrets",
+          "name": "[concat(variables('keyVaultName'), '/LuckyDrawCommon--DataTable--ConnectionString')]",
+          "apiVersion": "2016-10-01",
+          "tags": {
+            "displayName": "Secret: LuckyDrawCommon--DataTable--ConnectionString"
+          },
+          "properties": {
+            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=', variables('storageName'), ';AccountKey=', listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('storageName')), '2018-07-01').keys[0].value, ';EndpointSuffix=core.windows.net')]",
+            "contentType": "string",
+            "attributes": {
+              "enabled": true
+            }
+          },
+          "dependsOn": [
+            "[concat('Microsoft.KeyVault/vaults/', variables('keyVaultName'))]",
+            "[concat('Microsoft.Storage/storageAccounts/', variables('storageName'))]"
+          ]
+        },
+        {
+          "type": "Microsoft.KeyVault/vaults/secrets",
+          "name": "[concat(variables('keyVaultName'), '/LuckyDrawCommon--HttpClientFactory--Timer--BaseAddress')]",
+          "apiVersion": "2016-10-01",
+          "tags": {
+            "displayName": "Secret: LuckyDrawCommon--HttpClientFactory--Timer--BaseAddress"
+          },
+          "properties": {
+            "value": "[luckydraw.logicAppTriggerUrl(listCallbackUrl(resourceId('Microsoft.Logic/workflows', variables('timerLogicAppName')), '2016-06-01').value)]",
+            "contentType": "string",
+            "attributes": {
+              "enabled": true
+            }
+          },
+          "dependsOn": [
+            "[concat('Microsoft.KeyVault/vaults/', variables('keyVaultName'))]",
+            "[concat('Microsoft.Logic/workflows/', variables('timerLogicAppName'))]"
           ]
         }
       ]
