@@ -468,7 +468,7 @@
       "kind": "bot",
       "properties": {
         "displayName": "LuckyDraw Bot",
-        "endpoint": "https://www.microsoft.com",
+        "endpoint": "[concat('https://', variables('botApiName'), '.azurewebsites.net/messages')]",
         "msaAppId": "[parameters('microsoftAppId')]"
       }
     },
